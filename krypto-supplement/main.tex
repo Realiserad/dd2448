@@ -1,0 +1,61 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+
+\title{Supplement}
+\author{}
+\date{krypto15}
+
+\begin{document}
+
+\maketitle
+
+\section{Distributed hashing}
+
+The combiner $C(h_1, h_2) = h_1 \oplus h_2$ is not collision-resistant because it is commutative. You can create a collision by swapping two different blocks. If the combiner is commutative, it does not matter in which order the blocks are distributed. The Merkle-Damgård construction is not commutative since each block is dependent on the previous block, similar to CBC mode of operation. 
+
+For this problem I suggest a similar combiner $C(h_1, h_2) = H(h_1 || h_2)$. In this construction the blocks are independently hashed one by one and combined in order. Here follows an example for the message $M=b_1 || b_2 \ldots || b_k$.
+\begin{enumerate}
+\item Distribute the blocks $b_1, b_2\ldots b_k$ numbered with a nonce.
+\item Each machine hashes the blocks it receives.
+\item The blocks are combined from left to right, i.e invoke $C(b_{i-1}, b_i)$ until all blocks are combined.
+\end{enumerate}
+
+In a Merkle tree or hash list, each computer must be assigned the same number of blocks, to make the computation well-defined. To avoid this, we choose a centralized approach where one computer is selected as the root. The message is distributed in blocks, say 1 MB each. Core $i$ on computer $j$ is assigned $b_ij = \lceil \frac{B*f_{ij}}{F} \rceil$ blocks. The blocks are hashed in parallel using the program $P$ and the root collects the hashes (in order) using the function $C$.
+
+\begin{verbatim}
+// Input: f A list with frequency for core i on computer j
+//        M The message to hash
+DISTRIBUTE(f, M)
+    BLOCK_SIZE = 1MB
+    B = sizeof(M) / BLOCK_SIZE     // Number of blocks
+    F = sum(f_ij)                  // Total frequency
+    block = 1
+    foreach core in f
+        b_ij = ceil((B * f_ij) / F)
+        if (block + b_ij > B) 
+            b_ij = B
+        output P(M[block]... M[b_ij], root)
+        block += b_ij
+        
+// Input: blocks The blocks to hash (in order)
+//        root Computer collecting hashes
+P(blocks, root)
+    hashes = new list
+    forach block in blocks
+        hashes.append( H(block) )
+    send hashes to root
+
+// Input: B Number of blocks 
+COLLECT(B)
+    h // final hash
+    for i = 0 to B
+        h_n = request hash for block i
+        h = H(h || h_n)
+    output h
+\end{verbatim}
+
+The time it takes to complete the scheme is: The time it takes to distribute the blocks, the time it takes to perform the hashing and the time it takes to collect the result. The blocks always has to be distributed, so we cannot improve this part of our scheme. The time it takes to perform the hashing must be (close to) optimal, since the number of blocks are in proportion to the frequency of each machine. However, the third step would be faster in a Merkle tree ($O(\log n)$ invocations of $C$ instead of $O(n)$ invocations). If the devices have about the same amount of processing power, it might be better to use a tree-like structure. However, in practise, the last step should be pretty fast if a sufficiently large block size is selected.
+
+The security of our scheme is dependent on the collision resistance of the combiner $H(m_1 || m_2)$. Given that $H(m)$ is collision resistant, it is easy (and correct?) to argue that $H(b_1||b_2)$ is collision resistant since we can set $m=b_1||b_2$.
+\end{document}
