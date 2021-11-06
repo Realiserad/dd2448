@@ -1,0 +1,126 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{mathtools}
+\lstdefinestyle{tiny}{
+    basicstyle=\ttfamily\small
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,
+}
+\title{A simple two-party voting protocol based\\on homomorphic encryption}
+\author{
+        \texttt{Bastian Fredriksson}\\
+                \texttt{Faculty of IT, Monash University}\\
+        \texttt{bfre12@student.monash.edu}\\
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Abstract}
+In this assignment I will propose a secure computation protocol for e-voting based on the encryption scheme by van Dijk et al. described in \cite{yi14}. I will also provide a toy implementation written in Java, and make an analysis of the security and correctness of the protocol.
+
+\section{Encryption Scheme}
+The encryption scheme by van Dijk et al. is a symmetric encryption scheme which allows for a limited number of homomorphic operations. The security of the scheme is based on the approximate GCD problem\cite{dijk10}. In a slightly modified variant of the scheme described below we replace the random numbers $p$ and $q$ with two random primes, and the field $GF(2)$ is extended to the field $GF(v)$ where $V=v-1$ is the number of votes.
+\subsection{Key generation}
+Choose a security parameter $n$ and pick the secret key as a random prime $p \in [2^{n-1}, 2^n]$.
+\subsection{Encryption}
+$$Enc_p(m \in \mathbb{Z}_2)=pq+vr+m$$
+The mask $q$ is a large, random prime and the noise $r<\frac{p}{2v}$.
+\subsection{Decryption}
+$$Dec_p(c) = c \pmod{p} \pmod{v}$$
+The decryption recovers the message $m$ because $c \mod p \mod v = (pq + vr + m \mod p) \mod v = \text{ \{ vr \textless ~p \} } = vr + m \pmod v = m$.
+\subsection{Homomorphic properties}
+The encryption scheme is somewhat homomorphic and allows addition and multiplication of ciphertexts $c_1$ and $c_2$ as shown below.
+
+$$Dec_p(c_1 + c_2) =$$
+$$Dec_p(pq_1+vr_1+m_1+pq_2+vr_2+m_2) =$$
+$$(pq_1+vr_1+m_1+pq_2+vr_2+m_2) \pmod p \pmod v =$$
+$$\text{ \{ } v(r_1+r_2) < p \text{ \} } = vr_1 + vr_2 + m_1 + m_2 \pmod v =$$
+$$m_1 + m_2$$
+
+Note the condition $v(r_1+r_2)<p \rightarrow r < \frac{p}{2v}$.
+
+$$Dec_p(c_1 \times c_2) =$$
+$$Dec_p((pq_1+vr_1+m_1) \times (pq_2+vr_2+m_2)) =$$
+$$p^2q_1q_2 + vpq_1r_2 + pq_1m_1 + vpq_2r_1 + v^2r_1r_2 +$$
+$$vr_1m_2 + pq_2m_1 + vr_2m_1 + m_1m_2 \pmod p \pmod v =$$
+$$\big\{ v^2r_1r_2+vr_1m_2+vr_2m_1+m_1m_2 < p \big\} \rightarrow$$
+$$\big\{ vr_1r_2 + r_1m_2 + r_2m_1 + 1 < \frac{p}{2} \big\}$$
+$$v^2r_1r_2+vr_1m_2+vr_2m_1+m_1m_2 \pmod v =$$
+$$m_1 \times m_2$$
+
+\section{Electronic voting}
+The basic idea for an electronic voting system is as follows: Each participant submits their vote to a voting server. After the server has collected all votes, the majority vote is determined. The nature of voting requires privacy for the voters. One way to make sure that a vote cannot be traced back to a specific voter is to use a mixnet\cite{wikstrom04}. In a mixnet, the votes are sent encrypted using a public key cryptosystem to the first server in the mixnet. This server removes one layer of encryption, while at the same time randomly reordering the votes. The votes are then sent to the next server in the mixnet. The last server in the mixnet will output the votes in plaintext and a voting server can determine the majority vote. 
+
+Another way of achieving privacy for the voters is the let each participant encrypt their vote with a secret key before sending it to the voting server. If the encryption scheme is fully homomorphic, it would allow the voting server to compute the sum of the votes without decrypting them. In the two-party case where party $A$ is represented with the bit $0$ and party $B$ is represented by the bit 1, we can make the simple observation that the sum $s$ represents the number of votes for $B$ and $V-s$ represents the number of votes for $A$. Use of van Dijk et al. Somewhat Homomorphic Encryption Scheme allows the voters to jointly create a decryption key which recovers the sum to plaintext.
+
+\section{Description of the protocol}
+One of the core functions of the protocol is to compute the decryption key used by the voting server to reveal the result of the election. Let the encryption of a vote $m_i \in \{0, 1\}$ be $Enc_{p_i}(m_i)=p_iq_i+vr_i+m_i$, then we have:
+
+$$\sum_{i=1}^{V}{p_iq_i+vr_i+m_i}+\sum_{i=1}^{V}{\sum_{j=i+1}^{V}{p_iq_j}}=$$
+$$\sum_{i=1}^{V}{p_i}\sum_{i=1}^{V}{q_i}+v\sum_{i=1}^{V}{r_i}+\sum_{i=1}^{V}{m_i}=$$
+$$Enc_{p_1, p_2\ldots p_V}(\sum_{i=1}^{V}{m_i})$$.
+
+That is, the secret key $(p_1, p_2\ldots p_V)$ can be used to decrypt the number of votes for party $B$. In the first phase of the protocol, the voting server must determine the sum $\sum_{i=1}^{V}{\sum_{j=i+1}^{V}{p_iq_j}}$. Given a pair $(C_1, C_2)$ of voters, one term $p_iq_j$ in this sum can be retrieved as follows:
+\begin{enumerate}
+    \item The server sends a large random prime $k$ to $C_i$.
+    \item $C_i$ sends $p_ik$ to $C_j$.
+    \item $C_j$ sends $p_iq_jk$ to the server.
+    \item The server computes $\frac{p_iq_jk}{k}=p_iq_j$.
+\end{enumerate}
+
+The security of this protocol is based on the hardness of factorisation. However, the protocol is only secure against semi-honest adversaries, if the server collaborates with $C_2$ by sharing the value of $k$, the secret $p_i$ can easily be recovered. One remedy would be to let $C_1$ generate his own secret $k$ and send a garbled circuit to the server, which can be used to perform the division without disclosing the actual value of $k$.
+
+Once the server has collected all pairs $p_iq_j$ and added them to the ciphertext sum $s=\sum_{i=1}^{V}{Enc(m_i)}$, the decryption key $p_1+p_2\ldots p_V$ for $s$, can be computed as follows:
+\begin{enumerate}
+    \item The server begins organises the voters in a chain $(C_1, C_2\ldots C_V)$ and sends a random $k$ to $C_1$.
+    \item The first voter $C_1$ sends $p_1 + k$ to $C_2$.
+    \item Each subsequent voter $C_i$ $1 < i < V$ receives the sum $k_{sum} = k + \sum_{j=1}^{i-1}$ and sends $k_{sum} + p_i$ to voter $C_{i+1}$.
+    \item The last voter $C_V$ sends the secret key $p_1 + p_2\ldots + p_V + k$ to the server.
+    \item The server recovers the key used for decryption by subtracting his choice of $k$.
+\end{enumerate}
+Note that it is not secure to send the partial key $p_i + p_{i+1}$ to the server, since this would allow the server to learn about the votes put by voter $C_i$ and $C_{i+1}$. In particular, the server can decrypt $Enc_{p_i}(m_i) + Enc_{p_{i+1}}(m_{i+1})$ and if the result is 0 or 2, both voters must have voted for party $A$ or party $B$ respectively.
+
+\section{Analysis}
+Based on the analysis in \cite{dijk10}, for $\lambda$ bit security, we should choose $n = \Theta(2^{\lambda^2})$, which gives $r\approx 2^\lambda$, $p\approx2^{\lambda^2}$, $q\approx2^{\lambda^6}$. See table \ref{tab:params} for more details.
+
+The maximum number of additions was calculated as follows: After computing the sum of $N$ ciphertexts $c_1, c_2\ldots c_N$ with the initial noise $r_1, r_2, r_N$, the new noise becomes $(r_1 + r_2\ldots r_N) \le N2^{\lambda}$. We need $N2^\lambda < \frac{p}{2v}$.
+
+$$N2^\lambda < \frac{p}{2v}$$.
+$$N < \frac{2^{\lambda^2-\lambda-1}}{v}$$
+
+To avoid that our summation overflows, we need a field size $v > N$. Thus $N$ is maximised when $v = N + 1$.
+
+$$N = \frac{2^{\lambda^2-\lambda-1}}{N + 1}$$
+$$0 = N^2+N-2^{\lambda^2-\lambda-1}$$
+$$N = -\frac{1}{2}+\sqrt{\frac{1}{4}+2^{\lambda^2-\lambda-1}}$$
+$$N = 2^{\frac{\lambda^2-\lambda-1}{2}}$$
+
+For all practical purposes, the limit on the number of additions will not constitute a problem. For example, even with a modest security level of $64$ bits, the maximum number of additions becomes approximately $5 * 10^{606}$.
+
+However, since $q$ must be very large, this scheme does not work well in practice. Another thing we have neglected is that we have extended the field from $GF(2)$ to $GF(V)$ for some supposedly large $V$ which will force us to increase the size of $p$, $q$ and $r$ further.
+\begin{table}
+    \begin{tabular}{l || l | l | l}
+         \textbf{$\lambda$} & Secret $p$ & Mask $q$ & Noise $r$\\
+         $64$ & $4096$ & $\approx7*10^{10}$ & $64$\\
+         $80$ & $6400$ & $\approx3*10^{11}$ & $80$\\
+         $100$ & $10^4$ & $10^{12}$ & $100$\\
+         $128$ & $16384$ & $\approx4*10^{12}$ & $128$\\
+    \end{tabular}
+    \caption{Number of bits for $p$, $q$ and $r$ for different security levels $\lambda$.}
+    \label{tab:params}
+\end{table}
+\bibliographystyle{acm}
+\bibliography{references}
+\onecolumn
+\newpage
+\section{Appendix}
+\lstset{style=tiny}
+\lstinputlisting[language=Java]{code.java}
+\end{document}
